@@ -3,126 +3,131 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Trust Wallet + Tron (WalletConnect v2)</title>
+  <title>Connect Tron on Trust Wallet (WalletConnect v2)</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; }
-    .card { max-width: 640px; margin: 0 auto; border: 1px solid #eee; border-radius: 12px; padding: 24px; }
-    h2 { margin: 0 0 12px; }
-    p { color: #555; }
-    button { padding: 12px 18px; background: #3375BB; border: none; border-radius: 10px; color: #fff; font-weight: 600; cursor: pointer; }
-    button:disabled { opacity: .6; cursor: not-allowed; }
-    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-    #qr { margin-top: 16px; }
-    .log { background: #f7f9fc; padding: 12px; border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; white-space: pre-wrap; word-break: break-word; margin-top: 12px; }
-    .hint { font-size: 13px; color: #777; margin-top: 8px; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; background:#f8f9fb; }
+    .card { max-width: 680px; margin: 0 auto; background:#fff; border: 1px solid #e9eef3; border-radius: 16px; padding: 24px; box-shadow: 0 6px 20px rgba(0,0,0,.04); }
+    h2 { margin: 0 0 8px; }
+    p  { margin: 0 0 14px; color: #555; }
+    .row { display:flex; gap:12px; flex-wrap: wrap; margin-top:10px; }
+    button { padding: 12px 18px; background:#3375BB; color:#fff; border:none; border-radius:10px; font-weight:600; cursor:pointer; }
+    button.secondary { background:#9aa3ab; }
+    button:disabled { opacity:.6; cursor:not-allowed; }
+    #qr { margin-top:16px; }
+    .log { background:#f4f7fb; padding:12px; border-radius:10px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:13px; white-space:pre-wrap; word-break:break-word; margin-top:12px; max-height:260px; overflow:auto; }
+    .hint { font-size:13px; color:#777; margin-top:8px; }
   </style>
+
+  <!-- Load QRCode (for desktop fallback) -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js" defer></script>
+  <!-- Load WalletConnect SignClient UMD with defer (primary) -->
+  <script src="https://cdn.jsdelivr.net/npm/@walletconnect/sign-client@2.11.1/dist/index.umd.min.js" defer></script>
+  <!-- Fallback (will be loaded dynamically if needed) -->
 </head>
 <body>
   <div class="card">
     <h2>Trust Wallet + Tron (WalletConnect v2)</h2>
-    <p>Mobile: tap Connect to open Trust Wallet and connect Tron. Desktop: scan QR in Trust Wallet → Settings → WalletConnect.</p>
+    <p>Mobile: tap Connect to open Trust Wallet and approve Tron. Desktop: scan the QR in Trust Wallet → Settings → WalletConnect.</p>
     <div class="row">
       <button id="connectBtn">Connect Trust Wallet (Tron)</button>
-      <button id="disconnectBtn" style="background:#999">Disconnect</button>
+      <button id="disconnectBtn" class="secondary">Disconnect</button>
     </div>
     <div id="qr"></div>
     <div id="log" class="log"></div>
-    <div class="hint">If Trust Wallet opens but doesn’t show Tron connect, update Trust Wallet and try again.</div>
+    <div class="hint">If Trust Wallet opens but doesn’t show Tron connect, update the app. You must use a valid WalletConnect projectId.</div>
   </div>
 
   <script>
-    // ---------- Config ----------
-    const PROJECT_ID = "3991601c1f72f262b3381483cf8f99e4"; // your WC Cloud projectId
-    const TRON_CHAIN = "tron:728126428"; // Tron mainnet CAIP-2
+    // ---------------- Config ----------------
+    const PROJECT_ID = "3991601c1f72f262b3381483cf8f99e4"; // <- REQUIRED: your WalletConnect Cloud projectId
+    const TRON_CHAIN = "tron:728126428";     // Tron mainnet chainId (CAIP-2)
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-    // ---------- Logger ----------
+    // ---------------- Logger ----------------
     const logEl = document.getElementById("log");
     function log(...args) {
       console.log(...args);
-      logEl.textContent += args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ") + "\n";
+      const msg = args.map(a => typeof a === "string" ? a : JSON.stringify(a, null, 2)).join(" ");
+      logEl.textContent += msg + "\n";
     }
 
-    // ---------- Script loader with fallback ----------
-    function loadScript(src) {
-      return new Promise((resolve, reject) => {
-        const s = document.createElement("script");
-        s.src = src;
-        s.async = true;
-        s.onload = () => resolve();
-        s.onerror = () => reject(new Error("Failed to load " + src));
-        document.head.appendChild(s);
-      });
-    }
-
-    async function ensureWalletConnectDeps() {
-      // Try jsDelivr first (more reliable), then unpkg
-      try {
-        if (!window.WalletConnectSignClient) {
-          await loadScript("https://cdn.jsdelivr.net/npm/@walletconnect/sign-client@2.11.1/dist/index.umd.min.js");
-        }
-      } catch (e) {
-        log("jsDelivr sign-client load failed:", e.message);
-      }
-      if (!window.WalletConnectSignClient) {
-        await loadScript("https://unpkg.com/@walletconnect/sign-client@2.11.1/dist/index.umd.js").catch(() => {});
-      }
-
-      if (!window.QRCode) {
-        try {
-          await loadScript("https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js");
-        } catch (e) {
-          await loadScript("https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js").catch(() => {});
-        }
-      }
-
-      if (!window.WalletConnectSignClient) {
-        throw new Error("WalletConnectSignClient global not found after loading UMD.");
-      }
-    }
-
+    // ---------------- Helpers ----------------
     function renderQR(uri) {
       const qrDiv = document.getElementById("qr");
       qrDiv.innerHTML = "";
       const canvas = document.createElement("canvas");
       qrDiv.appendChild(canvas);
-      window.QRCode.toCanvas(canvas, uri, { width: 240 });
+      if (window.QRCode) {
+        window.QRCode.toCanvas(canvas, uri, { width: 240 });
+      } else {
+        qrDiv.innerHTML = "QR library not loaded.";
+      }
     }
 
     function deepLinkTrustWalletWithWC(uri) {
+      // Trust Wallet universal link for WalletConnect v2 deep-link
       const encoded = encodeURIComponent(uri);
       const primary = `https://link.trustwallet.com/wc?uri=${encoded}`;
-      const fall1 = `trust://wc?uri=${encoded}`;
-      const fall2 = `trustwallet://wc?uri=${encoded}`;
-      // Primary universal link
+      const iOSFallback = `trust://wc?uri=${encoded}`;
+      const altFallback = `trustwallet://wc?uri=${encoded}`;
+
+      // Primary
       window.location.href = primary;
-      // Fallbacks (some devices)
-      setTimeout(() => { window.location.href = fall1; }, 800);
-      setTimeout(() => { window.location.href = fall2; }, 1600);
+      // Fallback attempts
+      setTimeout(() => { window.location.href = iOSFallback; }, 700);
+      setTimeout(() => { window.location.href = altFallback; }, 1400);
     }
 
+    // Dynamically load a script (fallbacks)
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = src;
+        s.async = true;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error("Failed to load " + src));
+        document.head.appendChild(s);
+      });
+    }
+
+    async function ensureSignClientGlobal() {
+      // wait a bit for the deferred script
+      for (let i = 0; i < 20; i++) {
+        if (window.WalletConnectSignClient) return;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      // fallback: try unpkg
+      try {
+        await loadScript("https://unpkg.com/@walletconnect/sign-client@2.11.1/dist/index.umd.js");
+      } catch (e) {
+        log("Fallback load error:", e.message);
+      }
+      if (!window.WalletConnectSignClient) {
+        throw new Error("WalletConnectSignClient UMD global not found.");
+      }
+    }
+
+    // ---------------- WC State ----------------
     let signClient = null;
     let session = null;
 
     async function initSignClient() {
       if (signClient) return signClient;
-
-      await ensureWalletConnectDeps();
+      await ensureSignClientGlobal();
 
       const ctorObj = window.WalletConnectSignClient;
-      // UMD can expose class via .default or as itself
       const SignClientCtor = ctorObj?.default || ctorObj?.SignClient || ctorObj;
-      if (!SignClientCtor || typeof SignClientCtor.init !== "function") {
-        log("WalletConnectSignClient global shape:", Object.keys(ctorObj || {}));
-        throw new Error("SignClient constructor not available");
+      if (!SignClientCtor?.init) {
+        log("SignClient global shape:", Object.keys(ctorObj || {}));
+        throw new Error("SignClient constructor not available.");
       }
 
-      log("Initializing WalletConnect SignClient...");
+      log("Initializing WalletConnect SignClient…");
       signClient = await SignClientCtor.init({
         projectId: PROJECT_ID,
         metadata: {
           name: "Tron Connect Demo",
-          description: "Connect Tron via Trust Wallet (WC v2)",
+          description: "Connect Tron via Trust Wallet (WalletConnect v2)",
           url: window.location.origin || "https://example.com",
           icons: ["https://avatars.githubusercontent.com/u/37784886?s=200&v=4"]
         }
@@ -146,7 +151,7 @@
         document.getElementById("connectBtn").disabled = true;
 
         const client = await initSignClient();
-        log("Creating connection (tron namespace)…");
+        log("Creating connection with tron namespace…");
 
         const { uri, approval } = await client.connect({
           requiredNamespaces: {
@@ -159,28 +164,33 @@
         });
 
         if (uri) {
-          log("WC URI ready.");
+          log("WC URI generated.");
           if (isMobile) {
-            log("Opening Trust Wallet via deep link…");
+            log("Deep-linking into Trust Wallet…");
             deepLinkTrustWalletWithWC(uri);
           } else {
             renderQR(uri);
-            log("Scan this QR with Trust Wallet (Settings → WalletConnect).");
+            log("Scan QR with Trust Wallet → Settings → WalletConnect.");
           }
         } else {
-          log("No pairing URI (already paired?)");
+          log("No pairing URI (maybe already paired).");
         }
 
+        // Wait for user to approve in wallet
         session = await approval();
-        log("Connected session:", session);
+        log("Connected session received.");
+        log(session);
 
         const tronNs = session.namespaces?.tron;
         if (!tronNs) {
+          log("Connected, but no tron namespace approved.");
           alert("Connected, but Tron namespace not approved.");
           return;
         }
+
+        // Accounts format: "tron:728126428:<base58Address>"
         const accounts = (tronNs.accounts || []).map(a => a.split(":")[2]);
-        log("Tron accounts:", accounts);
+        log("Tron account(s):", accounts);
         alert("Connected Tron wallet:\n" + accounts.join("\n"));
       } catch (e) {
         console.error(e);
@@ -194,7 +204,7 @@
     async function disconnect() {
       try {
         if (!session || !signClient) {
-          log("No active session");
+          log("No active session to disconnect.");
           return;
         }
         await signClient.disconnect({
@@ -202,22 +212,23 @@
           reason: { code: 6000, message: "User disconnected" }
         });
         session = null;
-        log("Disconnected");
+        log("Disconnected.");
       } catch (e) {
         log("Disconnect error:", e.message || e);
       }
     }
 
+    // ---------------- Bind UI ----------------
     document.getElementById("connectBtn").addEventListener("click", connectTron);
     document.getElementById("disconnectBtn").addEventListener("click", disconnect);
 
-    // Diagnostics to confirm the UMD is present
+    // Diagnostics
     (async () => {
       try {
-        await ensureWalletConnectDeps();
-        log("WalletConnectSignClient global found.");
+        await ensureSignClientGlobal();
+        log("WalletConnectSignClient global ready.");
       } catch (e) {
-        log("WalletConnect deps failed:", e.message);
+        log("SignClient load error:", e.message);
       }
     })();
   </script>
