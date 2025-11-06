@@ -3,61 +3,56 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Send TRX</title>
+  <title>Tron dApp</title>
+  <!-- 🔑 CRITICAL: Load tronweb CDN to signal "this is a Tron dApp" -->
+  <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.0/dist/TronWeb.min.js"></script>
   <style>
     body { font-family: sans-serif; padding: 20px; text-align: center; }
-    .btn { padding: 12px 24px; background: #3375BB; color: white; border: none; border-radius: 8px; cursor: pointer; }
+    .btn { padding: 12px 24px; background: #3375BB; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px; }
     #status { margin-top: 20px; padding: 10px; background: #eef7ff; border-radius: 6px; display: none; }
   </style>
 </head>
 <body>
-  <h2>Send TRX via Trust Wallet</h2>
-  <button id="actionBtn" class="btn">Connect Wallet</button>
+  <h2>Connect Tron Wallet</h2>
+  <button id="connectBtn" class="btn">Connect</button>
   <div id="status"></div>
 
   <script>
-    const btn = document.getElementById('actionBtn');
+    const btn = document.getElementById('connectBtn');
     const status = document.getElementById('status');
 
-    function showStatus(msg, success = true) {
+    function show(msg, success = true) {
       status.textContent = msg;
       status.style.display = 'block';
       status.style.backgroundColor = success ? '#eef7ff' : '#ffeaea';
     }
 
-    // Check if we're inside Trust Wallet (tronWeb injected)
+    // Check if inside Trust Wallet
     if (typeof window.tronWeb !== 'undefined') {
-      // We're in Trust Wallet → try to get address (triggers prompt)
+      // Already in wallet → trigger prompt
       btn.textContent = "Get Address";
-      btn.onclick = async () => {
+      btn.onclick = () => {
         try {
-          // ⚠️ THIS TRIGGERS THE PROMPT ON FIRST ACCESS
-          const address = window.tronWeb.defaultAddress.base58;
-          showStatus(`✅ Connected: ${address}`);
-          
-          // Optional: send TRX
-          // await window.tronWeb.trx.sendTransaction("TRON_ADDRESS", 1000000); // 1 TRX
+          // ⚠️ This triggers the permission dialog
+          const addr = window.tronWeb.defaultAddress.base58;
+          show(`✅ ${addr}`);
         } catch (e) {
-          showStatus("❌ User rejected or not ready", false);
+          show("❌ Rejected", false);
         }
       };
 
-      // Auto-trigger on load (optional but recommended)
+      // Auto-trigger after short delay
       setTimeout(() => {
         if (!window.tronWeb.defaultAddress?.base58) {
-          btn.click(); // Trigger prompt automatically
-        } else {
-          showStatus(`✅ Already connected: ${window.tronWeb.defaultAddress.base58}`);
+          btn.click();
         }
-      }, 800);
+      }, 600);
     } else {
-      // We're in external browser → redirect to Trust Wallet
+      // External browser → redirect
       btn.textContent = "Open in Trust Wallet";
       btn.onclick = () => {
-        // 🔑 Use CLEAN URL: only origin + pathname (no search/hash)
-        const cleanUrl = window.location.origin + window.location.pathname;
-        const encoded = encodeURIComponent(cleanUrl);
-        window.open(`https://link.trustwallet.com/open_url?coin_id=195&url=${encoded}`, '_blank');
+        const url = encodeURIComponent(window.location.origin + window.location.pathname);
+        window.open(`https://link.trustwallet.com/open_url?coin_id=195&url=${url}`, '_blank');
       };
     }
   </script>
