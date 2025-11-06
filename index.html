@@ -4,8 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TRON DApp - Connect Wallet</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tronweb3/walletconnect-tron@1.0.0/dist/umd/index.min.js"></script>
+    
+    <!-- CORRECT WalletConnect CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@walletconnect/tron@2.0.0/dist/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.0/dist/TronWeb.min.js"></script>
+    
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -39,6 +42,8 @@
             cursor: pointer;
             transition: all 0.3s;
             margin: 10px;
+            width: 100%;
+            max-width: 280px;
         }
         .connect-btn:hover {
             transform: translateY(-2px);
@@ -75,6 +80,34 @@
             color: #ff4757;
             margin-top: 15px;
         }
+        .qr-container {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1a1f3a;
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 1000;
+            text-align: center;
+        }
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 999;
+        }
+        #qrCode {
+            margin: 20px auto;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+        }
     </style>
 </head>
 <body>
@@ -98,20 +131,21 @@
         </div>
         
         <div id="errorMsg" class="error"></div>
-        
-        <div id="qrModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000;">
-            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 10px;">
-                <h3 style="color: #000;">Scan QR Code with Trust Wallet</h3>
-                <div id="qrCode"></div>
-                <button onclick="closeQRModal()" style="margin-top: 15px; padding: 10px 20px;">Cancel</button>
-            </div>
-        </div>
+    </div>
+
+    <!-- QR Code Modal -->
+    <div id="overlay" class="overlay" onclick="closeQRModal()"></div>
+    <div id="qrModal" class="qr-container">
+        <h3 style="color: #ff2d95;">Scan with Trust Wallet</h3>
+        <div id="qrCode"></div>
+        <p style="color: #fff;">Scan this QR code with Trust Wallet</p>
+        <button class="disconnect-btn" onclick="closeQRModal()">Cancel</button>
     </div>
 
     <script>
         let currentWallet = null;
         let tronWeb = null;
-        let walletType = null;
+        let walletConnectInstance = null; // Global variable for WalletConnect
 
         // Initialize TronWeb
         function initTronWeb() {
@@ -126,16 +160,14 @@
         async function connectTronLink() {
             try {
                 if (!initTronWeb()) {
-                    showError('TronLink is not installed. Please install TronLink extension.');
+                    showError('TronLink is not installed. Please install TronLink extension and refresh the page.');
                     return;
                 }
 
-                // Request connection
                 const addr = await tronWeb.request({ method: 'tron_requestAccounts' });
                 
                 if (addr && addr.length > 0) {
                     currentWallet = addr[0];
-                    walletType = 'tronlink';
                     await displayWalletInfo();
                     hideError();
                 } else {
@@ -143,80 +175,95 @@
                 }
             } catch (error) {
                 showError('Error connecting to TronLink: ' + error.message);
+                console.error(error);
             }
         }
 
         // Connect with Trust Wallet via WalletConnect
         async function connectTrustWallet() {
             try {
-                const wallet = new WalletConnectWallet({
-                    network: 'tron:0x2b6653dc', // Mainnet
+                // Show QR modal
+                document.getElementById('overlay').style.display = 'block';
+                document.getElementById('qrModal').style.display = 'block';
+                
+                // Create WalletConnect instance
+                const { TronWeb } = window;
+                
+                walletConnectInstance = new window.WalletConnectTron.WalletConnect({
+                    network: 'tron:0x2b6653dc', // TRON Mainnet
                     options: {
-                        relayUrl: 'wss://relay.walletconnect.com',
-                        projectId: '3991601c1f72f262b3381483cf8f99e4', // Replace with your project ID
+                        projectId: '3991601c1f72f262b3381483cf8f99e4', // ⚠️ REPLACE WITH YOUR PROJECT ID
                         metadata: {
                             name: 'TRON DApp',
                             description: 'Connect your TRON wallet',
                             url: window.location.href,
                             icons: ['https://your-domain.com/icon.png']
-                        }
+                        },
+                        showQrCode: true
                     }
                 });
 
                 // Connect
-                const { address } = await wallet.connect();
+                const accounts = await walletConnectInstance.connect();
                 
-                if (address) {
-                    currentWallet = address;
-                    walletType = 'trustwallet';
+                if (accounts && accounts.length > 0) {
+                    currentWallet = accounts[0];
                     
-                    // Create TronWeb instance for Trust Wallet
+                    // Create TronWeb instance
                     tronWeb = new TronWeb({
-                        fullHost: 'https://api.trongrid.io',
-                        solidityNode: 'https://api.trongrid.io',
-                        eventServer: 'https://api.trongrid.io'
+                        fullHost: 'https://api.trongrid.io'
                     });
                     
-                    // Override sign function for WalletConnect
                     tronWeb.setAddress(currentWallet);
+                    
+                    // Override sign function
                     tronWeb.trx.sign = async (transaction) => {
-                        return await wallet.signTransaction(transaction);
+                        return await walletConnectInstance.signTransaction(transaction);
                     };
                     
                     await displayWalletInfo();
                     hideError();
+                    closeQRModal();
                 }
             } catch (error) {
                 showError('Error connecting to Trust Wallet: ' + error.message);
+                console.error(error);
+                closeQRModal();
             }
         }
 
         // Display wallet info and balance
         async function displayWalletInfo() {
-            if (!currentWallet) return;
+            if (!currentWallet || !tronWeb) return;
             
             document.getElementById('walletAddress').textContent = 'Address: ' + currentWallet;
             document.getElementById('walletInfo').style.display = 'block';
             
             try {
-                // Get TRX balance
                 const balance = await tronWeb.trx.getBalance(currentWallet);
                 const trxAmount = tronWeb.fromSun(balance);
                 document.getElementById('trxBalance').textContent = `TRX Balance: ${trxAmount} TRX`;
             } catch (error) {
                 document.getElementById('trxBalance').textContent = 'Balance: Unable to fetch';
+                console.error('Balance error:', error);
             }
         }
 
         // Disconnect wallet
         async function disconnectWallet() {
-            currentWallet = null;
-            walletType = null;
-            document.getElementById('walletInfo').style.display = 'none';
-            
-            if (walletType === 'trustwallet') {
-                await wallet.disconnect();
+            try {
+                if (walletConnectInstance) {
+                    await walletConnectInstance.disconnect();
+                    walletConnectInstance = null;
+                }
+            } catch (error) {
+                console.error('Disconnect error:', error);
             }
+            
+            currentWallet = null;
+            tronWeb = null;
+            document.getElementById('walletInfo').style.display = 'none';
+            hideError();
         }
 
         // Show error message
@@ -231,29 +278,42 @@
             document.getElementById('errorMsg').style.display = 'none';
         }
 
-        // Check if wallet is already connected on page load
+        // Close QR modal
+        function closeQRModal() {
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('qrModal').style.display = 'none';
+        }
+
+        // Check connection on page load
         window.addEventListener('load', async () => {
-            // Check TronLink connection
-            if (initTronWeb()) {
-                const addr = tronWeb.defaultAddress.base58;
-                if (addr) {
-                    currentWallet = addr;
-                    walletType = 'tronlink';
-                    await displayWalletInfo();
+            setTimeout(async () => {
+                if (initTronWeb()) {
+                    const addr = tronWeb.defaultAddress.base58;
+                    if (addr) {
+                        currentWallet = addr;
+                        await displayWalletInfo();
+                    }
                 }
-            }
+            }, 1000);
         });
 
         // Handle TronLink account change
         window.addEventListener('message', async (e) => {
             if (e.data.message && e.data.message.action === "accountsChanged") {
                 const accounts = e.data.message.data;
-                if (accounts.length > 0) {
+                if (accounts && accounts.length > 0) {
                     currentWallet = accounts[0];
                     await displayWalletInfo();
                 } else {
                     disconnectWallet();
                 }
+            }
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (walletConnectInstance) {
+                walletConnectInstance.disconnect();
             }
         });
     </script>
