@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TRON DApp - Connect Wallet</title>
     
-    <!-- CORRECT WalletConnect CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/@walletconnect/tron@2.0.0/dist/umd/index.min.js"></script>
+    <!-- ✅ CORRECT CDN for WalletConnect v2 -->
+    <script src="https://cdn.jsdelivr.net/npm/@walletconnect/tron@2.11.0/dist/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.0/dist/TronWeb.min.js"></script>
     
     <style>
@@ -28,10 +28,7 @@
             text-align: center;
             max-width: 500px;
         }
-        h1 {
-            color: #ff2d95;
-            margin-bottom: 30px;
-        }
+        h1 { color: #ff2d95; margin-bottom: 30px; }
         .connect-btn {
             background: linear-gradient(45deg, #ff2d95, #8b5cf6);
             color: white;
@@ -79,6 +76,7 @@
         .error {
             color: #ff4757;
             margin-top: 15px;
+            display: none;
         }
         .qr-container {
             display: none;
@@ -95,10 +93,8 @@
         .overlay {
             display: none;
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
             background: rgba(0,0,0,0.8);
             z-index: 999;
         }
@@ -115,13 +111,8 @@
         <h1>TRON DApp</h1>
         <p>Connect your TRON wallet to get started</p>
         
-        <button class="connect-btn" onclick="connectTronLink()">
-            Connect TronLink
-        </button>
-        
-        <button class="connect-btn" onclick="connectTrustWallet()">
-            Connect Trust Wallet
-        </button>
+        <button class="connect-btn" onclick="connectTronLink()">Connect TronLink</button>
+        <button class="connect-btn" onclick="connectTrustWallet()">Connect Trust Wallet</button>
         
         <div id="walletInfo" class="wallet-info">
             <h3>Wallet Connected</h3>
@@ -133,7 +124,6 @@
         <div id="errorMsg" class="error"></div>
     </div>
 
-    <!-- QR Code Modal -->
     <div id="overlay" class="overlay" onclick="closeQRModal()"></div>
     <div id="qrModal" class="qr-container">
         <h3 style="color: #ff2d95;">Scan with Trust Wallet</h3>
@@ -145,9 +135,9 @@
     <script>
         let currentWallet = null;
         let tronWeb = null;
-        let walletConnectInstance = null; // Global variable for WalletConnect
+        let walletConnectInstance = null;
 
-        // Initialize TronWeb
+        // ✅ Initialize TronWeb
         function initTronWeb() {
             if (window.tron && window.tron.tronWeb) {
                 tronWeb = window.tron.tronWeb;
@@ -156,11 +146,11 @@
             return false;
         }
 
-        // Connect with TronLink
+        // ✅ Connect TronLink
         async function connectTronLink() {
             try {
                 if (!initTronWeb()) {
-                    showError('TronLink is not installed. Please install TronLink extension and refresh the page.');
+                    showError('TronLink not found. Install extension and reload.');
                     return;
                 }
 
@@ -171,35 +161,39 @@
                     await displayWalletInfo();
                     hideError();
                 } else {
-                    showError('Connection rejected by user');
+                    showError('Connection rejected');
                 }
             } catch (error) {
-                showError('Error connecting to TronLink: ' + error.message);
+                showError('TronLink error: ' + error.message);
                 console.error(error);
             }
         }
 
-        // Connect with Trust Wallet via WalletConnect
+        // ✅ Connect Trust Wallet
         async function connectTrustWallet() {
             try {
-                // Show QR modal
+                // Check if library loaded
+                if (!window.WalletConnectTron) {
+                    showError('WalletConnect library not loaded. Check network connection.');
+                    console.error('window.WalletConnectTron is undefined');
+                    return;
+                }
+
+                // Show modal
                 document.getElementById('overlay').style.display = 'block';
                 document.getElementById('qrModal').style.display = 'block';
-                
-                // Create WalletConnect instance
-                const { TronWeb } = window;
-                
+
+                // Create instance
                 walletConnectInstance = new window.WalletConnectTron.WalletConnect({
                     network: 'tron:0x2b6653dc', // TRON Mainnet
                     options: {
-                        projectId: '3991601c1f72f262b3381483cf8f99e4', // ⚠️ REPLACE WITH YOUR PROJECT ID
+                        projectId: '3991601c1f72f262b3381483cf8f99e4', // ⚠️ GET FROM https://cloud.walletconnect.com
                         metadata: {
                             name: 'TRON DApp',
                             description: 'Connect your TRON wallet',
                             url: window.location.href,
                             icons: ['https://your-domain.com/icon.png']
-                        },
-                        showQrCode: true
+                        }
                     }
                 });
 
@@ -211,12 +205,11 @@
                     
                     // Create TronWeb instance
                     tronWeb = new TronWeb({
-                        fullHost: 'https://api.trongrid.io'
+                        fullHost: 'https://api.trongrid.io',
+                        privateKey: null // Will use WalletConnect to sign
                     });
                     
                     tronWeb.setAddress(currentWallet);
-                    
-                    // Override sign function
                     tronWeb.trx.sign = async (transaction) => {
                         return await walletConnectInstance.signTransaction(transaction);
                     };
@@ -226,13 +219,13 @@
                     closeQRModal();
                 }
             } catch (error) {
-                showError('Error connecting to Trust Wallet: ' + error.message);
+                showError('Trust Wallet error: ' + error.message);
                 console.error(error);
                 closeQRModal();
             }
         }
 
-        // Display wallet info and balance
+        // ✅ Display wallet info
         async function displayWalletInfo() {
             if (!currentWallet || !tronWeb) return;
             
@@ -244,12 +237,12 @@
                 const trxAmount = tronWeb.fromSun(balance);
                 document.getElementById('trxBalance').textContent = `TRX Balance: ${trxAmount} TRX`;
             } catch (error) {
-                document.getElementById('trxBalance').textContent = 'Balance: Unable to fetch';
+                document.getElementById('trxBalance').textContent = 'Balance: Error fetching';
                 console.error('Balance error:', error);
             }
         }
 
-        // Disconnect wallet
+        // ✅ Disconnect
         async function disconnectWallet() {
             try {
                 if (walletConnectInstance) {
@@ -266,54 +259,43 @@
             hideError();
         }
 
-        // Show error message
+        // ✅ Error handling
         function showError(message) {
             const errorEl = document.getElementById('errorMsg');
             errorEl.textContent = message;
             errorEl.style.display = 'block';
         }
 
-        // Hide error message
         function hideError() {
             document.getElementById('errorMsg').style.display = 'none';
         }
 
-        // Close QR modal
+        // ✅ Modal controls
         function closeQRModal() {
             document.getElementById('overlay').style.display = 'none';
             document.getElementById('qrModal').style.display = 'none';
         }
 
-        // Check connection on page load
+        // ✅ Auto-check TronLink on load
         window.addEventListener('load', async () => {
             setTimeout(async () => {
-                if (initTronWeb()) {
-                    const addr = tronWeb.defaultAddress.base58;
-                    if (addr) {
-                        currentWallet = addr;
-                        await displayWalletInfo();
-                    }
+                if (initTronWeb() && tronWeb.defaultAddress.base58) {
+                    currentWallet = tronWeb.defaultAddress.base58;
+                    await displayWalletInfo();
                 }
             }, 1000);
         });
 
-        // Handle TronLink account change
+        // ✅ Handle account change
         window.addEventListener('message', async (e) => {
-            if (e.data.message && e.data.message.action === "accountsChanged") {
+            if (e.data?.message?.action === "accountsChanged") {
                 const accounts = e.data.message.data;
-                if (accounts && accounts.length > 0) {
+                if (accounts?.length > 0) {
                     currentWallet = accounts[0];
                     await displayWalletInfo();
                 } else {
                     disconnectWallet();
                 }
-            }
-        });
-
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', () => {
-            if (walletConnectInstance) {
-                walletConnectInstance.disconnect();
             }
         });
     </script>
