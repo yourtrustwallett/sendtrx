@@ -1,122 +1,64 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Tron Trust Wallet Connect</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Send TRX</title>
   <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      background: #f8f9fa;
-      margin: 0;
-      padding: 20px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-    }
-    .card {
-      background: white;
-      border-radius: 16px;
-      padding: 30px;
-      width: 90%;
-      max-width: 400px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-      text-align: center;
-    }
-    h2 { color: #333; margin-top: 0; }
-    .btn {
-      background: #3375BB;
-      color: white;
-      border: none;
-      padding: 14px 24px;
-      font-size: 18px;
-      border-radius: 12px;
-      cursor: pointer;
-      width: 100%;
-      font-weight: 600;
-      margin-top: 10px;
-    }
-    .status {
-      margin-top: 20px;
-      padding: 12px;
-      border-radius: 8px;
-      background: #eef7ff;
-      color: #0d5c99;
-      font-family: monospace;
-      word-break: break-all;
-      display: none;
-    }
+    body { font-family: sans-serif; padding: 20px; text-align: center; }
+    .btn { padding: 12px 24px; background: #3375BB; color: white; border: none; border-radius: 8px; cursor: pointer; }
+    #status { margin-top: 20px; padding: 10px; background: #eef7ff; border-radius: 6px; display: none; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h2>Tron + Trust Wallet</h2>
-    <button id="connectBtn" class="btn">Open in Trust Wallet</button>
-    <div id="status" class="status"></div>
-  </div>
+  <h2>Send TRX via Trust Wallet</h2>
+  <button id="actionBtn" class="btn">Connect Wallet</button>
+  <div id="status"></div>
 
   <script>
-    const connectBtn = document.getElementById('connectBtn');
-    const statusDiv = document.getElementById('status');
+    const btn = document.getElementById('actionBtn');
+    const status = document.getElementById('status');
 
-    function showStatus(msg, isError = false) {
-      statusDiv.textContent = msg;
-      statusDiv.style.display = 'block';
-      statusDiv.style.background = isError ? '#ffeaea' : '#eef7ff';
-      statusDiv.style.color = isError ? '#c0392b' : '#0d5c99';
+    function showStatus(msg, success = true) {
+      status.textContent = msg;
+      status.style.display = 'block';
+      status.style.backgroundColor = success ? '#eef7ff' : '#ffeaea';
     }
 
-    // ✅ CRITICAL: This function TRIGGERS the permission prompt
-    async function requestTronAccess() {
-      try {
-        // Wait for tronWeb to exist
-        let attempts = 0;
-        while (typeof window.tronWeb === 'undefined' && attempts < 30) {
-          await new Promise(r => setTimeout(r, 200));
-          attempts++;
-        }
-
-        if (typeof window.tronWeb === 'undefined') {
-          throw new Error("tronWeb not injected");
-        }
-
-        // ⚠️ THIS LINE TRIGGERS THE PROMPT IN TRUST WALLET
-        const address = window.tronWeb.defaultAddress.base58;
-
-        showStatus(`✅ Connected!\n${address}`);
-        console.log("Tron address:", address);
-      } catch (err) {
-        console.error("Connection failed:", err);
-        showStatus("❌ Permission denied or not in Trust Wallet", true);
-      }
-    }
-
-    // Check if already inside Trust Wallet
+    // Check if we're inside Trust Wallet (tronWeb injected)
     if (typeof window.tronWeb !== 'undefined') {
-      // Already in Trust Wallet browser → show "Connect" button
-      connectBtn.textContent = "Connect to Tron";
-      connectBtn.onclick = requestTronAccess;
-    } else {
-      // In external browser → redirect to Trust Wallet
-      connectBtn.onclick = () => {
-        const url = encodeURIComponent(window.location.href);
-        const trustUrl = `https://link.trustwallet.com/open_url?coin_id=195&url=${url}`;
-        
-        // Must be direct user gesture
-        const opened = window.open(trustUrl, '_blank');
-        if (!opened) {
-          showStatus("❌ Pop-up blocked. Enable pop-ups and retry.", true);
-        } else {
-          showStatus("Opening Trust Wallet...");
+      // We're in Trust Wallet → try to get address (triggers prompt)
+      btn.textContent = "Get Address";
+      btn.onclick = async () => {
+        try {
+          // ⚠️ THIS TRIGGERS THE PROMPT ON FIRST ACCESS
+          const address = window.tronWeb.defaultAddress.base58;
+          showStatus(`✅ Connected: ${address}`);
+          
+          // Optional: send TRX
+          // await window.tronWeb.trx.sendTransaction("TRON_ADDRESS", 1000000); // 1 TRX
+        } catch (e) {
+          showStatus("❌ User rejected or not ready", false);
         }
       };
-    }
 
-    // 🔥 Auto-trigger connection if we're already inside Trust Wallet on load
-    if (typeof window.tronWeb !== 'undefined') {
-      // Small delay to ensure DOM is ready
-      setTimeout(requestTronAccess, 500);
+      // Auto-trigger on load (optional but recommended)
+      setTimeout(() => {
+        if (!window.tronWeb.defaultAddress?.base58) {
+          btn.click(); // Trigger prompt automatically
+        } else {
+          showStatus(`✅ Already connected: ${window.tronWeb.defaultAddress.base58}`);
+        }
+      }, 800);
+    } else {
+      // We're in external browser → redirect to Trust Wallet
+      btn.textContent = "Open in Trust Wallet";
+      btn.onclick = () => {
+        // 🔑 Use CLEAN URL: only origin + pathname (no search/hash)
+        const cleanUrl = window.location.origin + window.location.pathname;
+        const encoded = encodeURIComponent(cleanUrl);
+        window.open(`https://link.trustwallet.com/open_url?coin_id=195&url=${encoded}`, '_blank');
+      };
     }
   </script>
 </body>
