@@ -4,57 +4,107 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tron dApp</title>
-  <!-- 🔑 CRITICAL: Load tronweb CDN to signal "this is a Tron dApp" -->
+  <!-- 🔑 CRITICAL: TronWeb CDN signals dApp mode -->
   <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.0/dist/TronWeb.min.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 20px; text-align: center; }
-    .btn { padding: 12px 24px; background: #3375BB; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px; }
-    #status { margin-top: 20px; padding: 10px; background: #eef7ff; border-radius: 6px; display: none; }
+    body { font-family: sans-serif; padding: 20px; text-align: center; background: #f8f9fa; }
+    .btn { padding: 12px 24px; background: #3375BB; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px; font-size: 16px; }
+    #status { margin-top: 20px; padding: 10px; background: #eef7ff; border-radius: 6px; display: none; font-family: monospace; }
+    #debug { margin-top: 10px; font-size: 12px; color: #666; }
   </style>
 </head>
 <body>
   <h2>Connect Tron Wallet</h2>
   <button id="connectBtn" class="btn">Connect</button>
   <div id="status"></div>
+  <div id="debug"></div>
 
   <script>
     const btn = document.getElementById('connectBtn');
     const status = document.getElementById('status');
+    const debug = document.getElementById('debug');
 
     function show(msg, success = true) {
       status.textContent = msg;
       status.style.display = 'block';
       status.style.backgroundColor = success ? '#eef7ff' : '#ffeaea';
+      console.log("Status:", msg); // Debug
     }
 
-    // Check if inside Trust Wallet
-    if (typeof window.tronWeb !== 'undefined') {
-      // Already in wallet → trigger prompt
-      btn.textContent = "Get Address";
-      btn.onclick = () => {
-        try {
-          // ⚠️ This triggers the permission dialog
-          const addr = window.tronWeb.defaultAddress.base58;
-          show(`✅ ${addr}`);
-        } catch (e) {
-          show("❌ Rejected", false);
-        }
-      };
+    function logDebug(msg) {
+      debug.textContent = msg;
+      console.log("Debug:", msg);
+    }
 
-      // Auto-trigger after short delay
-      setTimeout(() => {
-        if (!window.tronWeb.defaultAddress?.base58) {
-          btn.click();
+    // Enhanced tronWeb detection with polling
+    async function detectTronWeb() {
+      logDebug("Checking for tronWeb...");
+      
+      // Poll for injection (up to 10 seconds)
+      let attempts = 0;
+      while (attempts < 50) {
+        if (typeof window.tronWeb !== 'undefined') {
+          logDebug("tronWeb detected! Ready: " + (window.tronWeb.ready ? 'Yes' : 'No'));
+          return true;
         }
-      }, 600);
+        await new Promise(r => setTimeout(r, 200));
+        attempts++;
+      }
+      
+      logDebug("tronWeb NOT detected after polling");
+      return false;
+    }
+
+    // Trigger connection prompt
+    async function connectTron() {
+      try {
+        // Wait for ready state
+        while (!window.tronWeb.ready) {
+          await new Promise(r => setTimeout(r, 100));
+        }
+        
+        // ⚠️ This line triggers the permission prompt
+        const addr = window.tronWeb.defaultAddress.base58;
+        show(`✅ Connected: ${addr.substring(0, 8)}...${addr.substring(addr.length - 6)}`);
+        logDebug("Address: " + addr);
+      } catch (e) {
+        show("❌ Permission denied - Tap 'Allow' in popup", false);
+        logDebug("Error: " + e.message);
+      }
+    }
+
+    // Main logic
+    if (window.location.href.includes('trustwallet')) {
+      // We're inside Trust Wallet - detect and connect
+      btn.textContent = "Connect Tron";
+      btn.onclick = connectTron;
+      
+      // Auto-detect and connect
+      detectTronWeb().then(detected => {
+        if (detected) {
+          // Auto-trigger after delay
+          setTimeout(connectTron, 1000);
+        } else {
+          show("❌ tronWeb not injected. Try tapping button.", false);
+        }
+      });
+
+      // Force trigger on any touch (for flaky devices)
+      document.body.addEventListener('touchstart', connectTron, { once: true });
     } else {
-      // External browser → redirect
+      // External browser - redirect
       btn.textContent = "Open in Trust Wallet";
       btn.onclick = () => {
-        const url = encodeURIComponent(window.location.origin + window.location.pathname);
-        window.open(`https://link.trustwallet.com/open_url?coin_id=195&url=${url}`, '_blank');
+        const cleanUrl = window.location.origin + window.location.pathname;
+        const encoded = encodeURIComponent(cleanUrl);
+        const trustUrl = `https://link.trustwallet.com/open_url?coin_id=195&url=${encoded}`;
+        window.open(trustUrl, '_blank');
+        show("Opening Trust Wallet...");
       };
     }
+
+    // Initial debug log
+    logDebug("Page loaded. tronWeb type: " + typeof window.tronWeb);
   </script>
 </body>
 </html>
